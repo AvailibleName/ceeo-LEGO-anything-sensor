@@ -1,3 +1,4 @@
+#include "debug.h"
 #include <Arduino.h>
 #include <Wire.h>
 #include "power_ui.h"
@@ -6,15 +7,19 @@
 
 // Define Hardware Pins for Seeed XIAO nRF52840
 #define BTN_PIN D0
-#define LED_R D1
+#define LED_R D3
 #define LED_G D2
-#define LED_B D3
+#define LED_B D1
 
 void setup() {
+    // CRITICAL for battery operation: Allow time for external sensors (PN532, VEML6040)
+    // to physically power up and stabilize before we attempt to talk to them over I2C.
+    // Without this, I2C devices can lock the bus if they are polled while still booting.
+    delay(2000);
+
     Serial.begin(115200);
-    // while (!Serial) delay(10); // Wait for Serial (optional, block boot if USB not connected)
     
-    Serial.println("LEGO Smart Sensor Emulator starting...");
+    DEBUG_PRINTLN("LEGO Smart Sensor Emulator starting...");
 
     // Initialize Wire for I2C (default SDA=D4, SCL=D5 on XIAO)
     Wire.begin();
@@ -29,10 +34,6 @@ void setup() {
     BleEmulator::begin();
 
     // Wire up UI callbacks
-    PowerUI::setSensorChangedCallback([](uint8_t index) {
-        Serial.printf("UI selected sensor index: %d\n", index);
-        SensorManager::setManualSensorType(index);
-    });
 
     PowerUI::setPairingToggledCallback([](bool pairingOn) {
         if (pairingOn) {
@@ -42,7 +43,7 @@ void setup() {
         }
     });
 
-    Serial.println("System Ready.");
+    DEBUG_PRINTLN("System Ready.");
 }
 
 void loop() {
@@ -51,14 +52,12 @@ void loop() {
     
     UIState state = PowerUI::getState();
 
-    // 2. If not in Config Mode, run background tasks
-    if (state != UIState::CONFIG_MODE) {
-        // Read NFC tags
-        SensorManager::loop();
-        
-        // Handle BLE notifications if connected
-        BleEmulator::loop();
-    }
+    // 2. Run background tasks
+    // Read NFC tags
+    SensorManager::loop();
+    
+    // Handle BLE notifications if connected
+    BleEmulator::loop();
     
     // Give FreeRTOS/SoftDevice a moment to breathe
     delay(5);

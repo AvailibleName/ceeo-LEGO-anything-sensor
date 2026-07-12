@@ -1,3 +1,4 @@
+#include "debug.h"
 #include "power_ui.h"
 
 // Hardware pins
@@ -5,16 +6,12 @@ static uint8_t pinBtn, pinR, pinG, pinB;
 
 // State
 static UIState currentState = UIState::IDLE;
-static uint8_t selectedSensorIndex = 0; // 0=Color Sensor, 1=Single Motor, etc.
-
-// Callbacks
-static void (*onSensorChanged)(uint8_t) = nullptr;
 static void (*onPairingToggled)(bool) = nullptr;
 
 // Card color
-static uint8_t targetColorR = 0;
-static uint8_t targetColorG = 0;
-static uint8_t targetColorB = 255; // Default blue if no card
+static uint8_t targetColorR = 255;
+static uint8_t targetColorG = 255;
+static uint8_t targetColorB = 255; // Default white if no card
 
 
 // Button timing
@@ -43,9 +40,11 @@ void PowerUI::begin(uint8_t btnPin, uint8_t ledR, uint8_t ledG, uint8_t ledB) {
 }
 
 UIState PowerUI::getState() { return currentState; }
-uint8_t PowerUI::getSelectedSensorIndex() { return selectedSensorIndex; }
-void PowerUI::setSensorChangedCallback(void (*cb)(uint8_t)) { onSensorChanged = cb; }
 void PowerUI::setPairingToggledCallback(void (*cb)(bool)) { onPairingToggled = cb; }
+
+void PowerUI::forceState(UIState state) {
+    currentState = state;
+}
 
 void PowerUI::setLed(uint8_t r, uint8_t g, uint8_t b) {
     // Common anode: 255 - value for PWM
@@ -69,14 +68,25 @@ void PowerUI::setCardColor(uint8_t fwColor) {
         case 9:  targetColorR = 255; targetColorG = 0;   targetColorB = 0;   break; // Red
         case 10: targetColorR = 255; targetColorG = 255; targetColorB = 255; break; // White
         case 0:
-        default: targetColorR = 0;   targetColorG = 0;   targetColorB = 255; break; // Default Blue
+        default: targetColorR = 255; targetColorG = 255; targetColorB = 255; break; // Default White
     }
 }
 
 void PowerUI::powerOff() {
-    Serial.println("Powering off (Deep Sleep)...");
+    DEBUG_PRINTLN("Powering off (Deep Sleep)...");
+    
+    // Flash Red briefly to indicate power off
+    setLed(255, 0, 0);
+    delay(200);
     setLed(0, 0, 0);
-    delay(100);
+
+    // CRITICAL: We must wait for the user to RELEASE the button!
+    // If we enter deep sleep while the button is still held down, 
+    // the SENSE_LOW condition is immediately met and the device wakes back up instantly!
+    while (digitalRead(pinBtn) == LOW) {
+        delay(10);
+    }
+    delay(50); // Small debounce
 
     // Prepare D0 for wakeup (low level)
     // NRF52 specific deep sleep code
@@ -85,7 +95,6 @@ void PowerUI::powerOff() {
     NRF_POWER->SYSTEMOFF = 1;
 #else
     // Fallback if not specifically nRF52
-    while (digitalRead(pinBtn) == LOW) delay(10); // Wait for release
     while (true) {
         // Deep sleep stub
         delay(1000); 
@@ -96,6 +105,11 @@ void PowerUI::powerOff() {
 void PowerUI::loop() {
     handleButton();
 
+    // Don't overwrite the LED if the user is holding the button for a long press
+    if (btnIsPressed && (millis() - btnPressTime > 3000)) {
+        return;
+    }
+
     // LED status based on state
     if (currentState == UIState::IDLE) {
         setLed(targetColorR, targetColorG, targetColorB); 
@@ -103,12 +117,6 @@ void PowerUI::loop() {
         // Blink current card color for pairing (or white if none)
         if ((millis() / 500) % 2 == 0) setLed(targetColorR, targetColorG, targetColorB);
         else setLed(0, 0, 0);
-    } else if (currentState == UIState::CONFIG_MODE) {
-        // Cycle colors based on selectedSensorIndex
-        if (selectedSensorIndex == 0) setLed(255, 0, 255); // Purple = Color Sensor
-        else if (selectedSensorIndex == 1) setLed(255, 0, 0); // Red = Single Motor
-        else if (selectedSensorIndex == 2) setLed(0, 255, 0); // Green = Double Motor
-        else setLed(255, 255, 0); // Yellow = Controller
     }
 }
 
@@ -133,20 +141,20 @@ void PowerUI::handleButton() {
                 uint32_t pressDuration = now - btnPressTime;
 
                 if (!longPressHandled && pressDuration > 50) {
-                    if (pressDuration > 3000 && pressDuration < 5000 && currentState != UIState::CONFIG_MODE) {
-                        powerOff();
-                    }
-                    else if (pressDuration <= 3000) {
-                        // Short Click
+                    // Short Click
+                    if (pressDuration <= 3000) {
                         if (currentState == UIState::IDLE) {
                             currentState = UIState::PAIRING;
                             if (onPairingToggled) onPairingToggled(true);
                         } else if (currentState == UIState::PAIRING) {
                             currentState = UIState::IDLE;
                             if (onPairingToggled) onPairingToggled(false);
-                        } else if (currentState == UIState::CONFIG_MODE) {
-                            selectedSensorIndex = (selectedSensorIndex + 1) % 4;
                         }
+                    } 
+                    // Long press released between 3 and 10 seconds
+                    else if (pressDuration <= 10000) {
+                        longPressHandled = true;
+                        powerOff();
                     }
                 }
             }
@@ -157,36 +165,24 @@ void PowerUI::handleButton() {
     if (btnIsPressed && !longPressHandled) {
         uint32_t pressDuration = now - btnPressTime;
         
-        if (currentState == UIState::CONFIG_MODE && pressDuration > 2000) {
-            // Save and exit config mode
-            currentState = UIState::IDLE;
+        // Reboot to DFU Bootloader after 10 seconds
+        if (pressDuration > 10000) {
             longPressHandled = true;
-            if (onSensorChanged) onSensorChanged(selectedSensorIndex);
-            
-            // Blink white to confirm save
-            setLed(255, 255, 255);
+            DEBUG_PRINTLN("Rebooting to DFU Bootloader...");
+            setLed(0, 0, 255); // Solid Blue
             delay(500);
-        }
-        else if (currentState != UIState::CONFIG_MODE && pressDuration > 5000) {
-            // Enter Config Mode
-            currentState = UIState::CONFIG_MODE;
-            longPressHandled = true;
             
-            // Turn off pairing if it was on
-            if (onPairingToggled) onPairingToggled(false);
+#ifdef NRF52840_XXAA
+            // Adafruit nRF52 bootloader magic byte for UF2
+            NRF_POWER->GPREGRET = 0x57;
+            NVIC_SystemReset();
+#endif
         }
-        else if (currentState != UIState::CONFIG_MODE && pressDuration > 3000 && pressDuration <= 5000) {
-            // We wait to see if they hold for 5s. If they release between 3s and 5s, power off.
-            // Wait, this means power off only happens ON RELEASE between 3 and 5 sec, 
-            // OR we just trigger it immediately if they hold for 3s.
-            // Let's make power off trigger immediately at 3s if they are in IDLE.
-            // But they need 5s to get to Config mode!
-            // This is a UX conflict. A 5s hold passes through the 3s hold.
-            // Alternative: Power off is 3s. Config mode is 5s. 
-            // We must only trigger Power Off on *release* if duration is between 3s and 5s.
+        // Visual indicator at 3 seconds that power-off is armed
+        else if (pressDuration > 3000) {
+            setLed(255, 0, 0); // Solid Red indicates ready to power off
         }
     }
 
-    // No looping logic here, it's handled on release!
     lastBtnState = reading;
 }

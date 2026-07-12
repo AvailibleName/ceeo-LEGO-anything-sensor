@@ -1,5 +1,6 @@
+#include "debug.h"
 #include "ble_emulator.h"
-
+#include "power_ui.h"
 // LEGO Service and Characteristics
 #define SERVICE_UUID        "0000FD02-0000-1000-8000-00805F9B34FB"
 #define CHAR_RX_UUID        "0000FD02-0001-1000-8000-00805F9B34FB"
@@ -18,15 +19,23 @@ static uint32_t notifyIntervalMs = 0; // 0 means notifications disabled
 void BleEmulator::connect_callback(uint16_t conn_handle) {
     deviceConnected = true;
     currentConnHandle = conn_handle;
-    Serial.println("Client connected!");
+    
+    // Stop the pairing light flashing
+    PowerUI::forceState(UIState::IDLE);
+    
+    DEBUG_PRINTLN("Client connected!");
 }
 
 void BleEmulator::disconnect_callback(uint16_t conn_handle, uint8_t reason) {
     deviceConnected = false;
     currentConnHandle = BLE_CONN_HANDLE_INVALID;
     notifyIntervalMs = 0;
-    Serial.print("Client disconnected, reason = 0x");
-    Serial.println(reason, HEX);
+    
+    // Resume pairing light flashing
+    PowerUI::forceState(UIState::PAIRING);
+    
+    DEBUG_PRINT("Client disconnected, reason = 0x");
+    DEBUG_PRINTLN(reason, HEX);
 }
 
 void BleEmulator::rx_write_callback(uint16_t conn_handle, BLECharacteristic* chr, uint8_t* data, uint16_t len) {
@@ -34,7 +43,7 @@ void BleEmulator::rx_write_callback(uint16_t conn_handle, BLECharacteristic* chr
         uint8_t cmd = data[0];
         
         if (cmd == 0) { // INFO_REQUEST
-            Serial.println("Received INFO_REQUEST. Sending INFO_RESPONSE...");
+            DEBUG_PRINTLN("Received INFO_REQUEST. Sending INFO_RESPONSE...");
             uint8_t fullResp[17] = {0};
             fullResp[0] = 1;
             fullResp[1] = 1; fullResp[2] = 0; fullResp[3] = 73; fullResp[4] = 0; // RPC 1.0.73
@@ -48,7 +57,7 @@ void BleEmulator::rx_write_callback(uint16_t conn_handle, BLECharacteristic* chr
             txChar.notify(fullResp, sizeof(fullResp));
         } 
         else if (cmd == 26) { // DEVICE_UUID_REQUEST
-            Serial.println("Received DEVICE_UUID_REQUEST.");
+            DEBUG_PRINTLN("Received DEVICE_UUID_REQUEST.");
             uint8_t resp[9] = {0};
             resp[0] = 27; 
             resp[1] = 0x11; resp[2] = 0x22; resp[3] = 0x33; resp[4] = 0x44;
@@ -59,9 +68,21 @@ void BleEmulator::rx_write_callback(uint16_t conn_handle, BLECharacteristic* chr
             if (len >= 3) {
                 uint16_t delay = data[1] | (data[2] << 8);
                 notifyIntervalMs = delay;
-                Serial.print("Received DEVICE_NOTIFICATION_REQUEST: ");
-                Serial.print(delay);
-                Serial.println(" ms");
+                DEBUG_PRINT("Received DEVICE_NOTIFICATION_REQUEST: ");
+                DEBUG_PRINT(delay);
+                DEBUG_PRINTLN(" ms");
+                
+                // CRITICAL FIX: Send DEVICE_NOTIFICATION_RESPONSE (41) back to the client
+                // so it doesn't hang indefinitely waiting for an acknowledgment.
+                uint8_t resp[2] = {41, 0}; // 41 = DEVICE_NOTIFICATION_RESPONSE, 0 = STATUS_ACK
+                txChar.notify(resp, sizeof(resp));
+            }
+        }
+        else {
+            // Unhandled core command. Route it to the active sensor so it can parse
+            // custom incoming data (e.g. text for an OLED display).
+            if (currentSensor) {
+                currentSensor->handleDataReceived(data, len);
             }
         }
     }
@@ -84,7 +105,7 @@ void BleEmulator::begin() {
     rxChar.setWriteCallback(rx_write_callback);
     rxChar.begin();
 
-    Serial.println("Bluefruit BLE Emulator initialized.");
+    DEBUG_PRINTLN("Bluefruit BLE Emulator initialized.");
 }
 
 void BleEmulator::updateManufacturerData(uint16_t productGroupDevice, uint8_t appColor, uint16_t cardSerial) {
@@ -115,21 +136,27 @@ void BleEmulator::updateManufacturerData(uint16_t productGroupDevice, uint8_t ap
     Bluefruit.ScanResponse.addService(legoService);
     Bluefruit.ScanResponse.addName();
 
-    Bluefruit.Advertising.restartOnDisconnect(false);
+    Bluefruit.Advertising.restartOnDisconnect(true);
 
     if (wasAdvertising) {
         Bluefruit.Advertising.start(0);
     }
 }
 
+void BleEmulator::disconnect() {
+    if (Bluefruit.connected()) {
+        Bluefruit.disconnect(Bluefruit.connHandle());
+    }
+}
+
 void BleEmulator::startAdvertising() {
     Bluefruit.Advertising.start(0); // 0 = Don't stop advertising after n seconds
-    Serial.println("Advertising started...");
+    DEBUG_PRINTLN("Advertising started...");
 }
 
 void BleEmulator::stopAdvertising() {
     Bluefruit.Advertising.stop();
-    Serial.println("Advertising stopped.");
+    DEBUG_PRINTLN("Advertising stopped.");
 }
 
 void BleEmulator::setSensor(LegoSensor* sensor) {
@@ -142,12 +169,32 @@ void BleEmulator::loop() {
         if (now - lastNotifyTime >= notifyIntervalMs) {
             lastNotifyTime = now;
             
-            uint8_t buffer[32];
-            size_t length = 0;
-            currentSensor->buildNotification(buffer, length);
+            uint8_t sensorData[32];
+            size_t sensorLength = 0;
+            currentSensor->buildNotification(sensorData, sensorLength);
             
-            if (length > 0) {
-                txChar.notify(buffer, length);
+            if (sensorLength > 0) {
+                // Wrap the payload in a DEVICE_NOTIFICATION envelope (Message ID 60)
+                uint8_t buffer[35];
+                buffer[0] = 60; // DEVICE_NOTIFICATION
+                buffer[1] = sensorLength & 0xFF; // Length LSB
+                buffer[2] = (sensorLength >> 8) & 0xFF; // Length MSB
+                memcpy(&buffer[3], sensorData, sensorLength);
+                
+                // Debug dump the exact hex bytes being sent
+                static int debugCount = 0;
+                if (debugCount < 3) {
+                    DEBUG_PRINT("BLE TX Dump: ");
+                    for (int i = 0; i < 3 + sensorLength; i++) {
+                        if (buffer[i] < 16) DEBUG_PRINT("0");
+                        DEBUG_PRINT(buffer[i], HEX);
+                        DEBUG_PRINT(" ");
+                    }
+                    DEBUG_PRINTLN();
+                    debugCount++;
+                }
+
+                txChar.notify(buffer, 3 + sensorLength);
             }
         }
     }

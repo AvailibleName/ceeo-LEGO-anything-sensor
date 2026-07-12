@@ -1,10 +1,16 @@
+#include "debug.h"
 #include "sensor_manager.h"
 #include "power_ui.h"
 
 #define RST_PIN D6 // You can change this to match your RST wiring!
 static MFRC522_I2C mfrc522(0x28, RST_PIN, &Wire); 
-static ColorSensor colorSensor; // Instance of the color sensor
-static LegoSensor* activeSensor = &colorSensor; // Default
+
+static IdleSensor idleSensor;
+static VEML6040ColorSensor vemlSensor;
+#include "OledSensor.h"
+static OledSensor oledSensor;
+static LegoSensor* activeSensor = &idleSensor; // Default
+
 
 
 // Card state
@@ -17,29 +23,15 @@ void SensorManager::begin() {
     
     byte v = mfrc522.PCD_ReadRegister(MFRC522_I2C::VersionReg);
     if (v == 0x00 || v == 0xFF) {
-        Serial.println("WARNING: Communication failure with WS1850S.");
+        DEBUG_PRINTLN("WARNING: Communication failure with WS1850S.");
     } else {
-        Serial.print("Found WS1850S (MFRC522). Firmware Version: 0x");
-        Serial.println(v, HEX);
+        DEBUG_PRINT("Found WS1850S (MFRC522). Firmware Version: 0x");
+        DEBUG_PRINTLN(v, HEX);
     }
 
     activeSensor->begin();
     
     // Default Advertisement setup
-    BleEmulator::setSensor(activeSensor);
-    BleEmulator::updateManufacturerData(activeSensor->getProductId(), currentCardColor, currentCardSerial);
-}
-
-void SensorManager::setManualSensorType(uint8_t index) {
-    // 0 = ColorSensor, etc.
-    // For now we only have ColorSensor implemented as a proof of concept.
-    // If you add a Motor or Controller, you would switch `activeSensor` here.
-    if (index == 0) {
-        activeSensor = &colorSensor;
-    } 
-    // else if (index == 1) { activeSensor = &singleMotor; }
-    
-    activeSensor->begin();
     BleEmulator::setSensor(activeSensor);
     BleEmulator::updateManufacturerData(activeSensor->getProductId(), currentCardColor, currentCardSerial);
 }
@@ -50,6 +42,43 @@ void SensorManager::loop() {
     if (now - lastNfcRead > 1000) {
         lastNfcRead = now;
         readNfcCard();
+        
+        // Scan for I2C sensor changes
+        detectSensors();
+    }
+}
+
+void SensorManager::detectSensors() {
+    LegoSensor* newSensor = &idleSensor;
+
+    // Check for VEML6040 (0x10)
+    Wire.beginTransmission(0x10);
+    if (Wire.endTransmission() == 0) {
+        newSensor = &vemlSensor;
+    }
+    // Check for OLED (0x3C)
+    Wire.beginTransmission(0x3C);
+    if (Wire.endTransmission() == 0) {
+        newSensor = &oledSensor;
+    }
+    // (Add more sensors here in the future: if (0x11) newSensor = &motor, etc)
+
+    // Fallback: If active sensor is suddenly disconnected, default to Idle
+    if (!activeSensor->isConnected()) {
+        newSensor = &idleSensor;
+    }
+
+    if (newSensor != activeSensor) {
+        DEBUG_PRINTLN("Hardware swap detected! Updating BLE...");
+        activeSensor = newSensor;
+        activeSensor->begin();
+
+        // Drop active Bluetooth connections to force the client to re-read the Manufacturer Data
+        BleEmulator::disconnect();
+        
+        // Update BLE advertisement
+        BleEmulator::setSensor(activeSensor);
+        BleEmulator::updateManufacturerData(activeSensor->getProductId(), currentCardColor, currentCardSerial);
     }
 }
 
@@ -96,7 +125,7 @@ bool SensorManager::readNfcCard() {
         if (color != currentCardColor || serial != currentCardSerial) {
             currentCardColor = color;
             currentCardSerial = serial;
-            Serial.printf("LEGO Card updated! Color: %d, Serial: %d\n", color, serial);
+            DEBUG_PRINTF("LEGO Card updated! Color: %d, Serial: %d\n", color, serial);
             
             PowerUI::setCardColor(currentCardColor);
 

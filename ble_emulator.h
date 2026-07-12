@@ -9,6 +9,7 @@ class BleEmulator {
 public:
     static void begin();
     static void updateManufacturerData(uint16_t productGroupDevice, uint8_t appColor, uint16_t cardSerial);
+    static void disconnect();
     static void startAdvertising();
     static void stopAdvertising();
     static void setSensor(LegoSensor* sensor);

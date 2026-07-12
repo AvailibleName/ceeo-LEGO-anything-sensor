@@ -5,8 +5,7 @@
 
 enum class UIState {
     IDLE,
-    PAIRING,
-    CONFIG_MODE
+    PAIRING
 };
 
 class PowerUI {
@@ -17,10 +16,9 @@ public:
     static void setLed(uint8_t r, uint8_t g, uint8_t b); // 0-255
     static void setCardColor(uint8_t fwColor); // Maps LEGO firmware color to RGB
 
-    // Config Mode sensor selection (0-3 for example)
-    static uint8_t getSelectedSensorIndex();
-    static void setSensorChangedCallback(void (*callback)(uint8_t));
     static void setPairingToggledCallback(void (*callback)(bool));
+    
+    static void forceState(UIState state);
 
 private:
     static void handleButton();
