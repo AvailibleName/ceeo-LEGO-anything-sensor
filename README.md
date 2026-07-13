@@ -35,8 +35,8 @@ cd ceeo-LEGO-anything-sensor
 ### RGB Button UI
 - **XIAO `D0`** $\rightarrow$ Button contact/switch (Middle pin labeled **NO** on the switch)
 - **XIAO `D1`** $\rightarrow$ Blue LED (Pin **L2** on the switch)
-- **XIAO `D2`** $\rightarrow$ 100$\ohm$ resistor $\rightarrow$ Green LED (Pin **L4** on the switch)
-- **XIAO `D3`** $\rightarrow$ 100$\ohm$ resistor $\rightarrow$ Red LED (Pin **L3** on the switch)
+- **XIAO `D2`** $\rightarrow$ 100$\Omega$ resistor $\rightarrow$ Green LED (Pin **L4** on the switch)
+- **XIAO `D3`** $\rightarrow$ 100$\Omega$ resistor $\rightarrow$ Red LED (Pin **L3** on the switch)
 - **XIAO `3V3`** $\rightarrow$ Power (Pin **L1** on the switch)
 
 ### I2C Bus (Sensors & NFC)
