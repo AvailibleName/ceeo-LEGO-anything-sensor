@@ -48,9 +48,9 @@ cd ceeo-LEGO-anything-sensor
 
 ## Build Instructions
 
-1. **3D Printing the Housing**: 
+1. **3D Printing the Housing** (files in `CAD/` folder): 
    - Print the main body housing **button-side-down** using **organic supports** set to **everywhere**.
-   - The top plate should not need supports. (files in `CAD/` folder).
+   - The top plate should not need supports.
 2. **Wiring**: Wire all components according to the guide above.
 3. **Flashing Firmware**: 
    - **Flash the Arduino firmware onto the XIAO *before* assembling the housing.** Once assembled, the tiny reset (RST) button on the XIAO used for entering Bootloader mode will not be accessible!
