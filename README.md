@@ -6,7 +6,7 @@ To build the hardware for this device, you will need the following components:
 - **Microcontroller (Seeed XIAO nRF52840):** [Amazon Link](https://a.co/d/0hvDNsSc)
 - **Battery:** [Amazon Link](https://a.co/d/0hvjeEuI)
 - **RGB Button:** [Amazon Link](https://a.co/d/0b4CaRvc)
-- **NFC Reader (MFRC522/WS1850S):** [Amazon Link](https://a.co/d/06IRiosf) *(Placeholder)*
+- **NFC Reader (MFRC522/WS1850S):** [Amazon Link](https://a.co/d/06IRiosf)
 - **Misc:** Jumper wires, NFC cards/tags, and the actual sensors you wish to connect (e.g., VEML6040 Color Sensor, I2C OLED).
 
 ---
