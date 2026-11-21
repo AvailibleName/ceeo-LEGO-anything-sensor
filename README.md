@@ -1,4 +1,4 @@
-## Bill of Materials (BOM)
+## Bill of Materials
 
 To build the hardware for this device, you will need the following components:
 
