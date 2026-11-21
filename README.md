@@ -134,7 +134,7 @@ By extending the `legoeducation` library in this repo, we can support totally cu
 
 ## Adding Your Own Custom Sensors (AI Generator)
 
-Because adding a completely custom sensor requires both writing a C++ driver for the microcontroller AND modifying the Python `legoeducation` library on your PC to parse the data, we have included an AI Prompt generator to do the heavy lifting for you!
+Because adding a completely custom sensor requires both writing a C++ driver for the microcontroller AND modifying the Python `legoeducation` library on your PC to parse the data, there is an AI Prompt that (usually) works to add the code required for a new sensor for you.
 
 You can find the AI prompt template in the `AI_SENSOR_PROMPT.md` file in the root of this repository. 
 
