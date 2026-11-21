@@ -115,7 +115,7 @@ By extending the `legoeducation` library in this repo, we can support totally cu
 ### Color Sensor (VEML6040)
 - **Product ID**: `61` (Emulates the official LEGO SPIKE Color Sensor)
 - **Features**: This firmware module reads data from a VEML6040 I2C sensor and packages it to behave *identically* to an official LEGO Color Sensor.
-- **Usage**: Since it acts identically to the official hardware, you can just use the standard legoeducation `ColorSensor` class. Please refer directly to the [original LEGOEducation library documentation](https://github.com/LEGO/LEGOEducation/blob/main/README.md) for full instructions on how to use it!
+- **Usage**: Since it acts identically to the official hardware, you can just use the standard legoeducation `ColorSensor` class. Please refer directly to the [original LEGOEducation library documentation](https://github.com/LEGO/LEGOEducation/blob/main/README.md) for full instructions on how to use it.
 
 
 ### OLED Display (`OledSensor`)
