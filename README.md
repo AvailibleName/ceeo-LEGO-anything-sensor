@@ -142,4 +142,4 @@ To use it:
 1. Open `AI_SENSOR_PROMPT.md`.
 2. Choose **Option 1** if you are using an agentic AI that can read your local files (like Cursor, Claude Code, or Antigravity), or **Option 2** if you are pasting into a web chatbot (like ChatGPT or Claude Web).
 3. Fill in the bracketed placeholders (`[LIKE THIS]`) with the specific I2C address and details of the hardware module you want to add.
-4. The AI will instantly generate the `MySensor.cpp` and `MySensor.h` files for your Arduino firmware, AND provide the exact Python snippets you need to paste into `python_lib/legoeducation/rpc_message.py` and `device.py` to seamlessly parse the new data!
+4. Your chatbot/agent should generate the `MySensor.cpp` and `MySensor.h` files for your Arduino firmware, AND provide the exact Python snippets you need to paste into `python_lib/legoeducation/rpc_message.py` and `device.py` to  parse the new data.
